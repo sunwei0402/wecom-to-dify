@@ -6,6 +6,7 @@ Webhook 服务器模块
 """
 
 import logging
+import threading
 import xml.etree.ElementTree as ET
 
 from flask import Flask, request
@@ -16,6 +17,24 @@ from wechat_crypto import WXBizMsgCrypt
 from wechat_kf_client import WeComKfClient
 
 logger = logging.getLogger(__name__)
+
+# 用于消息去重的全局缓存
+processed_msgids = set()
+processed_msgids_list = []
+msgids_lock = threading.Lock()
+
+def _is_msg_processed(msgid: str) -> bool:
+    if not msgid:
+        return False
+    with msgids_lock:
+        if msgid in processed_msgids:
+            return True
+        processed_msgids.add(msgid)
+        processed_msgids_list.append(msgid)
+        if len(processed_msgids_list) > 1000:
+            oldest = processed_msgids_list.pop(0)
+            processed_msgids.discard(oldest)
+        return False
 
 
 def create_app(config: dict) -> Flask:
@@ -118,21 +137,23 @@ def create_app(config: dict) -> Flask:
             logger.warning("回调消息中未找到 Token 字段")
             return "success"
 
-        # 3. 拉取消息
-        try:
-            sync_result = kf_client.sync_msg(
-                token=callback_token, open_kfid=open_kfid
-            )
-        except RuntimeError as e:
-            logger.error("拉取消息失败: %s", str(e))
-            return "success"
+        # 3. 异步拉取消息并处理，避免超时导致企业微信重试
+        def async_process():
+            try:
+                sync_result = kf_client.sync_msg(
+                    token=callback_token, open_kfid=open_kfid
+                )
+                msg_list = sync_result.get("msg_list", [])
+                for msg in msg_list:
+                    _process_message(
+                        msg, kf_client, dify_client, session_mgr
+                    )
+            except RuntimeError as e:
+                logger.error("拉取消息失败: %s", str(e))
+            except Exception as e:
+                logger.error("后台处理消息异常: %s", str(e))
 
-        # 4. 处理每条消息
-        msg_list = sync_result.get("msg_list", [])
-        for msg in msg_list:
-            _process_message(
-                msg, kf_client, dify_client, session_mgr
-            )
+        threading.Thread(target=async_process, daemon=True).start()
 
         return "success"
 
@@ -200,9 +221,15 @@ def _process_message(
     msgtype = msg.get("msgtype", "")
     external_userid = msg.get("external_userid", "")
     open_kfid = msg.get("open_kfid", "")
+    msgid = msg.get("msgid", "")
 
     if not external_userid:
         logger.warning("消息中缺少 external_userid")
+        return
+
+    # 检查是否已处理过
+    if _is_msg_processed(msgid):
+        logger.debug("消息 %s 已处理过，跳过", msgid)
         return
 
     # 目前仅支持文本消息
