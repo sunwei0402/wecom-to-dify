@@ -1,0 +1,41 @@
+# ============================================================
+# 企业微信客服 → Dify 中间件配置模板
+# 复制此文件为 config.yaml 并填入实际值
+# ============================================================
+
+# 企业微信配置
+wecom:
+  # 企业ID（在企业微信管理后台 → 我的企业 中查看）
+  corp_id: "your_corp_id"
+  # 微信客服应用的 Secret（在应用管理 → 微信客服 中查看）
+  kf_secret: "your_kf_secret"
+  # 客服账号 ID（以 wk 开头）
+  open_kfid: "your_open_kfid"
+
+# 回调配置（在企业微信管理后台 → 微信客服 → API 中设置）
+callback:
+  # 回调 Token
+  token: "your_callback_token"
+  # 回调 EncodingAESKey
+  encoding_aes_key: "your_encoding_aes_key"
+
+# Dify 配置
+dify:
+  # Dify API 基础地址（自部署时修改为你的地址）
+  api_base_url: "https://api.dify.ai/v1"
+  # Dify 应用的 API Key
+  api_key: "app-your_dify_api_key"
+
+# 服务器配置
+server:
+  # 监听地址
+  host: "0.0.0.0"
+  # 监听端口
+  port: 8080
+  # 是否开启 Flask debug 模式
+  debug: false
+
+# 会话配置
+session:
+  # 会话超时时间（秒），超时后将开始新的 Dify 对话
+  timeout: 3600
